@@ -25,8 +25,6 @@ SuperStrict
 Module Cower.RenderBuffer
 
 Import Brl.Graphics
-Import Brl.Bank
-Import Brl.BankStream
 Import Brl.LinkedList
 Import Pub.Glew
 
@@ -174,12 +172,15 @@ Type TRenderState
 	End Function
 End Type
 
+Assert 1.005 <= TRenderBuffer.RENDER_BUFFER_SCALE Else "Insufficient scale for renderbuffer resizing"
 Type TRenderBuffer
 	Const RENDER_BUFFER_SIZE_BYTES:Int = 32768 '32kb
+	Const RENDER_BUFFER_SCALE# = 2 ' The amount by which buffer size is multiplied when resizing
  
-	Field _vertbuffer:TBank, _vertstream:TBankStream
-	Field _texcoordbuffer:TBank, _texcoordstream:TBankStream
-	Field _colorbuffer:TBank, _colorstream:TBankStream
+	Field _vertbuffer@Ptr, _vertbuffer_size%
+	Field _texcoordbuffer@Ptr, _texcoordbuffer_size%
+	Field _colorbuffer@Ptr, _colorbuffer_size%
+
 	Field _index:Int = 0, _sets%=0
 	Field _arrindices:Int[], _arrcounts:Int[]
 	Field _lock%=0
@@ -191,14 +192,12 @@ Type TRenderBuffer
 	Field _stateTop:TRenderState
  
 	Method New()
-		_vertbuffer = TBank.Create(RENDER_BUFFER_SIZE_BYTES)
-		_vertstream = TBankStream.Create(_vertbuffer)
-		
-		_texcoordbuffer = TBank.Create(RENDER_BUFFER_SIZE_BYTES)
-		_texcoordstream = TBankStream.Create(_texcoordbuffer)
-		
-		_colorbuffer = TBank.Create(RENDER_BUFFER_SIZE_BYTES)
-		_colorstream = TBankStream.Create(_colorbuffer)
+		_vertbuffer_size = RENDER_BUFFER_SIZE_BYTES
+		_colorbuffer_size = RENDER_BUFFER_SIZE_BYTES
+		_texcoordbuffer_size = RENDER_BUFFER_SIZE_BYTES
+		_vertbuffer = MemAlloc(_vertbuffer_size)
+		_texcoordbuffer = MemAlloc(_texcoordbuffer_size)
+		_colorbuffer = MemAlloc(_colorbuffer_size)
 		
 		_arrindices = New Int[512]
 		_arrcounts = New Int[512]
@@ -210,6 +209,12 @@ Type TRenderBuffer
 		_indexTop = New TRenderIndices
 		_renderIndexStack = New TList
 		_renderIndexStack.AddLast(_indexTop)
+	End Method
+	
+	Method Delete()
+		MemFree(_vertbuffer)
+		MemFree(_texcoordbuffer)
+		MemFree(_colorbuffer)
 	End Method
 	
 	' Add a new state/index 
@@ -261,38 +266,77 @@ Type TRenderBuffer
 		EndIf
 	End Method
  
-	Method AddVerticesEx(points:Float[], texcoords:Float[], colors:Byte[])
-		Assert _lock=0 Else "Buffers are locked for rendering"
-		Assert colors.Length/4 = points.Length/3 And points.Length/3 = texcoords.Length/2 And ..
-			(points.Length Mod 3 = 0 And texcoords.Length Mod 2 = 0 And colors.Length Mod 4 = 0) ..
-			Else "Incorrect buffer sizes - buffers must describe the same number of vertices"
- 
+	Method AddVerticesEx(elements%, points@Ptr, texcoords@Ptr, colors@Ptr)
+'		Assert _lock=0 Else "Buffers are locked for rendering"
+'		Assert points Else "Must at least provide point data"
+ 		
 		If _sets >= _arrindices.Length Then
-			_arrindices = _arrindices[.. _arrindices.Length*2]
-			_arrcounts = _arrcounts[.. _arrcounts.Length*2]
+			_arrindices = _arrindices[.. _arrindices.Length*RENDER_BUFFER_SCALE]
+			_arrcounts = _arrcounts[.. _arrcounts.Length*RENDER_BUFFER_SCALE]
 		EndIf
- 
-		Local numIndices:Int = points.Length/3
 		
 		_arrindices[_sets] = _index
-		_arrcounts[_sets] = numIndices
- 
-		_texcoordstream.WriteBytes(texcoords, texcoords.Length*4)
-		_vertstream.WriteBytes(points, points.Length*4)
-		_colorstream.WriteBytes(colors, colors.Length)
+		_arrcounts[_sets] = elements
+		
+		' TODO: find a prettier way to write this
+		Local sizereq% = (_index+elements)*4
+		
+		If _vertbuffer_size < sizereq*3 Then
+			Local newsize% = _vertbuffer_size*RENDER_BUFFER_SCALE
+			If newsize < sizereq*3 Then
+				newsize = sizereq*3
+			EndIf
+			_vertbuffer = MemExtend(_vertbuffer, _vertbuffer_size, newsize)
+			_vertbuffer_size = newsize
+			Assert _vertbuffer Else "Unable to resize vertex buffer"
+		EndIf
+		
+		If _texcoordbuffer_size < sizereq*2 Then
+			Local newsize% = _texcoordbuffer_size*RENDER_BUFFER_SCALE
+			If newsize < sizereq*2 Then
+				newsize = sizereq*2
+			EndIf
+			_texcoordbuffer = MemExtend(_texcoordbuffer, _texcoordbuffer_size, newsize)
+			_texcoordbuffer_size = newsize
+			Assert _texcoordbuffer Else "Unable to resize texture coordinate buffer"
+		EndIf
+		
+		If _colorbuffer_size < sizereq Then
+			Local newsize% = _colorbuffer_size*RENDER_BUFFER_SCALE
+			If newsize < sizereq Then
+				newsize = sizereq
+			EndIf
+			_colorbuffer = MemExtend(_colorbuffer, _colorbuffer_size, newsize)
+			_colorbuffer_size = newsize
+			Assert _colorbuffer Else "Unable to resize color buffer"
+		EndIf
+		
+		MemCopy(_vertbuffer+(_index*12), points, elements*12)
+		If texcoords Then
+			MemCopy(_texcoordbuffer+(_index*8), texcoords, elements*8)
+		EndIf
+		If colors Then
+			MemCopy(_colorbuffer+(_index*4), colors, elements*4)
+		Else
+			memset_(_colorbuffer+(_index*4), 255, elements*4)
+		EndIf
 		
 		_sets :+ 1
 		_indexTop.indices :+ 1
 		
-		_index :+ numIndices
-		_indexTop.numIndices :+ numIndices
+		_index :+ elements
+		_indexTop.numIndices :+ elements
 	End Method
 	
 	Method LockBuffers()
-		If _lock = 0 Then
-			glVertexPointer(3, GL_FLOAT, 0, _vertbuffer.Lock())
-			glColorPointer(4, GL_UNSIGNED_BYTE, 0, _colorbuffer.Lock())
-			glTexCoordPointer(2, GL_FLOAT, 0, _texcoordbuffer.Lock())
+		If _lock = 0 And _index Then
+			glVertexPointer(3, GL_FLOAT, 0, _vertbuffer)
+			glColorPointer(4, GL_UNSIGNED_BYTE, 0, _colorbuffer)
+			glTexCoordPointer(2, GL_FLOAT, 0, _texcoordbuffer)
+			
+			If GL_EXT_compiled_vertex_array Then
+				glLockArraysEXT(0, _index)
+			EndIf
 		EndIf
 		_lock :+ 1
 	End Method
@@ -300,17 +344,20 @@ Type TRenderBuffer
 	Method UnlockBuffers()
 		Assert _lock > 0 Else "Unmatched unlock for buffers"
 		_lock :- 1
-		If _lock = 0 Then
+		If _lock = 0 And _index Then
+			If GL_EXT_compiled_vertex_array Then
+				glUnlockArraysEXT()
+			EndIf
+			
 			glVertexPointer(4, GL_FLOAT, 0, Null)
 			glColorPointer(4, GL_FLOAT, 0, Null)
 			glTexCoordPointer(4, GL_FLOAT, 0, Null)
-			_vertbuffer.Unlock()
-			_colorbuffer.Unlock()
-			_texcoordbuffer.Unlock()
 		EndIf
 	End Method
  
 	Method Render()
+		If _sets = 0 Then Return
+		
 		LockBuffers ' because we don't want to be robbed
 		
 		Local indexPointer%Ptr, countPointer%Ptr
@@ -329,7 +376,7 @@ Type TRenderBuffer
 			
 			state.Bind()
 			
-			If glMultiDrawArrays Then
+			If GL_VERSION_1_4 Then
 				If 1 < index.indices Then
 					glMultiDrawArrays(state.renderMode, Varptr _arrindices[index.indexFrom], Varptr _arrcounts[index.indexFrom], index.indices)
 				Else
@@ -348,9 +395,9 @@ Type TRenderBuffer
 	Method Reset()
 		' make like nothing happened and equip a wig of charisma
 		Assert _lock = 0 Else "Buffers are locked for rendering"
-		_vertstream.Seek(0)
-		_texcoordstream.Seek(0)
-		_colorstream.Seek(0)
+'		_vertstream.Seek(0)
+'		_texcoordstream.Seek(0)
+'		_colorstream.Seek(0)
 		_index = 0
 		_sets = 0
 		
