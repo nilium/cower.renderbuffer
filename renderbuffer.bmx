@@ -34,7 +34,8 @@ Private
 
 Function FloatsDiffer:Int(a:Float, b:Float) NoDebug
 	Const FLOAT_EPSILON:Float = 5.96e-08
-	Return Abs(a-b) > FLOAT_EPSILON
+	a:-b
+	Return -FLOAT_EPSILON < a And a < FLOAT_EPSILON
 End Function
 
 Type TRenderIndices
