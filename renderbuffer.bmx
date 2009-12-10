@@ -267,8 +267,8 @@ Type TRenderBuffer
 	End Method
  
 	Method AddVerticesEx(elements%, points@Ptr, texcoords@Ptr, colors@Ptr)
-'		Assert _lock=0 Else "Buffers are locked for rendering"
-'		Assert points Else "Must at least provide point data"
+		Assert _lock=0 Else "Buffers are locked for rendering"
+		Assert points Else "Must at least provide point data"
  		
 		If _sets >= _arrindices.Length Then
 			_arrindices = _arrindices[.. _arrindices.Length*RENDER_BUFFER_SCALE]
