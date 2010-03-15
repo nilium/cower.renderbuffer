@@ -46,6 +46,7 @@ Extern "C"
 	Function rb_set_mode(rb@Ptr, mode%)
 	Function rb_set_blend_func(rb@Ptr, source%, dest%)
 	Function rb_set_alpha_func(rb@Ptr, func%, ref#)
+	Function rb_set_scissor_test(rb@Ptr, enabled%, x%, y%, w%, h%)
 	Function rb_set_line_width(rb@Ptr, width#)
 	Function rb_add_vertices(rb@Ptr, elements%, vertices@Ptr, texcoords@Ptr, colors@Ptr)
 	Function rb_lock_buffers(rb@Ptr)
@@ -63,6 +64,9 @@ Type TRenderState Final
 	Field blend_dest%
 	Field alpha_func%
 	Field alpha_ref#
+	Field sc_enabled%
+	Field sc_x%, sc_y%
+	Field sc_w%, sc_h%
 	Field line_width#
 	
 	Method New()
@@ -130,12 +134,15 @@ Type TRenderBuffer Final
 		rb_set_alpha_func(Self, func, ref)
 	End Method
 	
+	Method SetScissorTest(enabled%, x%, y%, w%, h%)
+		rb_set_scissor_test(Self, enabled, x, y, w, h)
+	End Method
+	
 	Method SetLineWidth(width#)
 		rb_set_line_width(Self, width)
 	End Method
  
 	Method AddVerticesEx(elements%, vertices@Ptr, texcoords@Ptr, colors@Ptr)
-		DebugLog "a"
 		rb_add_vertices(Self, elements, vertices, texcoords, colors)
 	End Method
 	
