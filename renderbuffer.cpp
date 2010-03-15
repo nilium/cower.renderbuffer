@@ -451,6 +451,7 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 				new_size = sizereq*3;
 			}
 			rb->vertices = (GLfloat*)realloc(rb->vertices, new_size*sizeof(GLfloat));
+			rb->vertices_length = new_size;
 		}
 	
 		sizereq *= 2;
@@ -460,6 +461,7 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 				new_size = sizereq;
 			}
 			rb->texcoords = (GLfloat*)realloc(rb->texcoords, new_size*sizeof(GLfloat));
+			rb->texcoords_length = new_size;
 		}
 	
 		sizereq *= 2;
@@ -469,6 +471,7 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 				new_size = sizereq;
 			}
 			rb->colors = (GLubyte*)realloc(rb->colors, new_size*sizeof(GLubyte));
+			rb->colors_length = new_size;
 		}
 	}
 	
