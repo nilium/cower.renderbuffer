@@ -322,7 +322,7 @@ render_buffer_t *rb_init(render_buffer_t *rb) {
 	}
 	
 	if (rb) {
-		rb->vertices_length = RENDER_BUFFER_INIT_ELEMENTS*3;
+		rb->vertices_length = RENDER_BUFFER_INIT_ELEMENTS*2;
 		rb->texcoords_length = RENDER_BUFFER_INIT_ELEMENTS*2;
 		rb->colors_length = RENDER_BUFFER_INIT_ELEMENTS*4;
 		rb->vertices = (GLfloat*)malloc(rb->vertices_length*sizeof(GLfloat));
@@ -443,18 +443,17 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 	rb->counts[set] = elements;
 	
 	{
-		size_t sizereq = (size_t)(index+elements);
+		size_t sizereq = (size_t)(index+elements)*2;
 	
-		if (rb->vertices_length < sizereq*3) {
+		if (rb->vertices_length < sizereq) {
 			size_t new_size = (size_t)(rb->vertices_length*RENDER_BUFFER_SCALE);
-			if (new_size < sizereq*3) {
-				new_size = sizereq*3;
+			if (new_size < sizereq) {
+				new_size = sizereq;
 			}
 			rb->vertices = (GLfloat*)realloc(rb->vertices, new_size*sizeof(GLfloat));
 			rb->vertices_length = new_size;
 		}
 	
-		sizereq *= 2;
 		if (rb->texcoords_length < sizereq) {
 			size_t new_size = (size_t)(rb->texcoords_length*RENDER_BUFFER_SCALE);
 			if (new_size < sizereq) {
@@ -475,30 +474,34 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 		}
 	}
 	
-	memcpy(rb->vertices+(index*3), vertices, elements*3*sizeof(GLfloat));
+	index *= 2;
+	int copy_elems = elements*2;
+	size_t copy_floats = copy_elems*sizeof(GLfloat);
+	memcpy(rb->vertices+(index), vertices, copy_floats);
 	
 	if (texcoords != NULL) {
-		memcpy(rb->texcoords+(index*2), texcoords, elements*2*sizeof(GLfloat));
+		memcpy(rb->texcoords+(index), texcoords, copy_floats);
 	} else {
-		memset(rb->texcoords+(index*2), 0, elements*2*sizeof(GLfloat));
+		memset(rb->texcoords+(index), 0, copy_floats);
 	}
 	
 	if (colors != NULL) {
-		memcpy(rb->colors+(index*4), colors, elements*4*sizeof(GLubyte));
+		memcpy(rb->colors+(index*2), colors, copy_elems*2*sizeof(GLubyte));
 	} else {
-		memset(rb->colors+(index*4), 255, elements*4*sizeof(GLubyte));
+		memset(rb->colors+(index*2), 255, copy_elems*2*sizeof(GLubyte));
 	}
 	
 	
 	rb->index += elements;
-	rb->render_indices->back().indices += 1;
-	rb->render_indices->back().num_indices += elements;
+	render_indices_t &indices = rb->render_indices->back();
+	indices.indices += 1;
+	indices.num_indices += elements;
 }
 
 
 void rb_lock_buffers(render_buffer_t *rb) {
 	if (rb->lock == 0 && rb->index) {
-		glVertexPointer(3, GL_FLOAT, 0, rb->vertices);
+		glVertexPointer(2, GL_FLOAT, 0, rb->vertices);
 		glColorPointer(4, GL_UNSIGNED_BYTE, 0, rb->colors);
 		glTexCoordPointer(2, GL_FLOAT, 0, rb->texcoords);
 		
