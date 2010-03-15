@@ -25,7 +25,7 @@ THE SOFTWARE.
 #include <float.h>
 #include <string.h>
 #include <stdio.h>
-#include <deque>
+#include <vector>
 #include <iostream>
 
 extern "C" {
@@ -78,7 +78,7 @@ typedef struct s_render_indices {
 	uint32_t num_indices;
 } render_indices_t;
 
-typedef std::deque<render_indices_t> render_indices_deque_t;
+typedef std::vector<render_indices_t> render_indices_deque_t;
 
 typedef struct s_render_state {
 	GLuint texture_name;
@@ -90,7 +90,7 @@ typedef struct s_render_state {
 	GLfloat line_width;
 } render_state_t;
 
-typedef std::deque<render_state_t> render_state_deque_t;
+typedef std::vector<render_state_t> render_state_deque_t;
 
 typedef struct s_render_buffer {
 	GLfloat *vertices, *texcoords;
