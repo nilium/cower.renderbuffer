@@ -290,14 +290,13 @@ void rs_set_texture(GLuint name) {
 	if (name == rs_globals.texture2D_binding && cur_seq == active_seq ) {
 		return;
 	}
-	glEnable(GL_TEXTURE_2D);
-	glBindTexture(GL_TEXTURE_2D, name);
 	
 	if (name) {
 		if (!rs_globals.texture2D_enabled || cur_seq != active_seq) {
 			glEnable(GL_TEXTURE_2D);
 			rs_globals.texture2D_enabled = true;
 		}
+		glBindTexture(GL_TEXTURE_2D, name);
 	} else if (rs_globals.texture2D_enabled || cur_seq == active_seq) {
 		glDisable(GL_TEXTURE_2D);
 		rs_globals.texture2D_enabled = false;
