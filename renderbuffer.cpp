@@ -25,10 +25,12 @@ THE SOFTWARE.
 #include <float.h>
 #include <string.h>
 #include <stdio.h>
-#include <vector>
-#include <iostream>
+#include <stdlib.h>
 
+#ifdef __cplusplus
 extern "C" {
+#endif
+
 
 
 #pragma mark Utility
@@ -78,8 +80,6 @@ typedef struct s_render_indices {
 	uint32_t num_indices;
 } render_indices_t;
 
-typedef std::vector<render_indices_t> render_indices_deque_t;
-
 typedef struct s_render_state {
 	GLuint texture_name;
 	GLenum render_mode;
@@ -89,8 +89,6 @@ typedef struct s_render_state {
 	
 	GLfloat line_width;
 } render_state_t;
-
-typedef std::vector<render_state_t> render_state_deque_t;
 
 typedef struct s_render_buffer {
 	GLfloat *vertices, *texcoords;
@@ -105,8 +103,9 @@ typedef struct s_render_buffer {
 	uint32_t indices_length;
 	uint32_t lock;
 	
-	render_indices_deque_t *render_indices;
-	render_state_deque_t *render_states;
+	render_indices_t *render_indices;
+	render_state_t *render_states;
+	uint32_t state_capacity, state_top;
 } render_buffer_t;
 
 
@@ -145,7 +144,7 @@ void rs_set_texture(GLuint name);
 
 render_buffer_t *rb_new();
 render_buffer_t *rb_init(render_buffer_t *rb);
-void rb_destroy(render_buffer_t *rb, int free_rb);
+void rb_destroy(render_buffer_t *rb);
 //inline void rb_new_state(render_buffer_t *rb);
 void rb_set_texture(render_buffer_t *rb, GLuint name);
 void rb_set_mode(render_buffer_t *rb, GLenum mode);
@@ -322,6 +321,7 @@ render_buffer_t *rb_init(render_buffer_t *rb) {
 	}
 	
 	if (rb) {
+		// init vertex arrays
 		rb->vertices_length = RENDER_BUFFER_INIT_ELEMENTS*2;
 		rb->texcoords_length = RENDER_BUFFER_INIT_ELEMENTS*2;
 		rb->colors_length = RENDER_BUFFER_INIT_ELEMENTS*4;
@@ -334,92 +334,99 @@ render_buffer_t *rb_init(render_buffer_t *rb) {
 		rb->indices = (GLint*)malloc(RENDER_BUFFER_INIT_ELEMENTS*sizeof(GLint));
 		rb->counts = (GLsizei*)malloc(RENDER_BUFFER_INIT_ELEMENTS*sizeof(GLsizei));
 		rb->lock = 0;
-		rb->render_indices = new render_indices_deque_t();
-		rb->render_indices->push_back((render_indices_t){0, 0, 0});
-		render_state_t init_state;
-		rs_init(&init_state);
-		rb->render_states = new render_state_deque_t();
-		rb->render_states->push_back(init_state);
+		
+		// init index arrays
+		rb->render_indices = (render_indices_t*)malloc(sizeof(render_indices_t)*RENDER_BUFFER_INIT_ELEMENTS);
+		*rb->render_indices = (render_indices_t){0,0,0};
+		
+		// init state arrays
+		rb->render_states = (render_state_t*)malloc(sizeof(render_state_t)*RENDER_BUFFER_INIT_ELEMENTS);
+		rs_init(rb->render_states);
+		
+		rb->state_capacity = RENDER_BUFFER_INIT_ELEMENTS;
+		rb->state_top = 0;
 	}
 	return rb;
 }
 
 
-void rb_destroy(render_buffer_t *rb, int free_rb) {
+void rb_destroy(render_buffer_t *rb) {
 	if (rb) {
 		free(rb->vertices);
 		free(rb->texcoords);
 		free(rb->colors);
 		free(rb->indices);
 		free(rb->counts);
-		delete rb->render_states;
-		delete rb->render_indices;
-		if (free_rb != 0) {
-			delete rb;
-		}
+		free(rb->render_states);
+		free(rb->render_indices);
 	}
 }
 
 
 inline void rb_new_state(render_buffer_t *rb) {	
-	if (0 < rb->render_indices->back().indices) {
-		render_indices_t indices;
-		indices.index_from = rb->sets;
-		indices.indices = indices.num_indices = 0;
-		rb->render_indices->push_back(indices);
-		rb->render_states->push_back(rb->render_states->back());
+	if (0 < rb->render_indices[rb->state_top].indices) {
+		uint32_t last = rb->state_top;
+		uint32_t top = ++rb->state_top;
+		if (top == rb->state_capacity) {
+			uint32_t newcap = rb->state_capacity *= 2;
+			rb->render_indices = (render_indices_t*)realloc(rb->render_indices, sizeof(render_indices_t)*newcap);
+			rb->render_states = (render_state_t*)realloc(rb->render_states, sizeof(render_state_t)*newcap);
+		}
+		
+		rb->render_indices[top] = (render_indices_t){rb->sets, 0, 0};
+		rb->render_states[top] = rb->render_states[last];
 	}
 }
 
 
 void rb_set_texture(render_buffer_t *rb, GLuint name) {
-	if (rb->render_states->back().texture_name != name) {
+	if (rb->render_states[rb->state_top].texture_name != name) {
 		rb_new_state(rb);
-		rb->render_states->back().texture_name = name;
+		rb->render_states[rb->state_top].texture_name = name;
 	}
 }
 
 
 void rb_set_mode(render_buffer_t *rb, GLenum mode) {
-	if (rb->render_states->back().render_mode != mode) {
+	if (rb->render_states[rb->state_top].render_mode != mode) {
 		rb_new_state(rb);
-		rb->render_states->back().render_mode = mode;
+		rb->render_states[rb->state_top].render_mode = mode;
 	}
 }
 
 
 void rb_set_blend_func(render_buffer_t *rb, GLenum source, GLenum dest) {
-	blend_factors_t orig = rb->render_states->back().blend;
+	blend_factors_t orig = rb->render_states[rb->state_top].blend;
 	if (orig.source != source || orig.dest != dest) {
 		rb_new_state(rb);
-		rb->render_states->back().blend = (blend_factors_t){source, dest};
+		rb->render_states[rb->state_top].blend = (blend_factors_t){source, dest};
 	}
 }
 
 
 void rb_set_alpha_func(render_buffer_t *rb, GLenum func, GLclampf ref) {
-	alpha_test_t orig = rb->render_states->back().alpha;
+	alpha_test_t orig = rb->render_states[rb->state_top].alpha;
 	if (orig.func != func || floats_differ(orig.ref, ref)) {
 		rb_new_state(rb);
-		rb->render_states->back().alpha = (alpha_test_t){func, ref};
+		rb->render_states[rb->state_top].alpha = (alpha_test_t){func, ref};
 	}
 }
 
 
 void rb_set_scissor_test(render_buffer_t *rb, int enabled, int x, int y, int w, int h) {
-	scissor_test_t scissor = rb->render_states->back().scissor;
+	scissor_test_t scissor = rb->render_states[rb->state_top].scissor;
 	if (scissor.enabled != enabled || (enabled && (scissor.x != x || scissor.y != y ||
 		scissor.width != w || scissor.height != h))) {
 		rb_new_state(rb);
-		rb->render_states->back().scissor = (scissor_test_t){enabled, (GLint)x, (GLint)y, (GLsizei)w, (GLsizei)h};
+		rb->render_states[rb->state_top].scissor = (scissor_test_t){enabled, (GLint)x, (GLint)y, (GLsizei)w, (GLsizei)h};
 	}
 }
 
 
 void rb_set_line_width(render_buffer_t *rb, GLfloat width) {
-	if (floats_differ(rb->render_states->back().line_width, width)) {
+	if (floats_differ(rb->render_states[rb->state_top].line_width, width)) {
 		rb_new_state(rb);
-		rb->render_states->back().line_width = width;
+		rb->render_states[rb->state_top].line_width = width;
 	}
 }
 
@@ -493,9 +500,9 @@ void rb_add_vertices(render_buffer_t *rb, int elements, GLfloat *vertices, GLflo
 	
 	
 	rb->index += elements;
-	render_indices_t &indices = rb->render_indices->back();
-	indices.indices += 1;
-	indices.num_indices += elements;
+	render_indices_t *indices = rb->render_indices+rb->state_top;
+	indices->indices += 1;
+	indices->num_indices += elements;
 }
 
 
@@ -505,7 +512,7 @@ void rb_lock_buffers(render_buffer_t *rb) {
 		glColorPointer(4, GL_UNSIGNED_BYTE, 0, rb->colors);
 		glTexCoordPointer(2, GL_FLOAT, 0, rb->texcoords);
 		
-		if (GLEW_EXT_compiled_vertex_array) {
+		if (GL_EXT_compiled_vertex_array) {
 			glLockArraysEXT(0, rb->index);
 		}
 	}
@@ -521,7 +528,7 @@ void rb_unlock_buffers(render_buffer_t *rb) {
 	}
 	rb->lock -= 1;
 	if (rb->lock == 0 && rb->index) {
-		if (GLEW_EXT_compiled_vertex_array) {
+		if (GL_EXT_compiled_vertex_array) {
 			glUnlockArraysEXT();
 		}
 		
@@ -542,47 +549,46 @@ void rb_render(render_buffer_t *rb) {
 	GLint *indices_ptr = rb->indices;
 	GLsizei *counts_ptr = rb->counts;
 	
-	render_indices_deque_t::const_iterator index_iter = rb->render_indices->begin();
-	render_state_deque_t::const_iterator state_iter = rb->render_states->begin();
+	uint32_t state_idx = 0;
+	uint32_t state_top = rb->state_top;
 	
-	render_indices_deque_t::const_iterator index_end = rb->render_indices->end();
-	render_state_deque_t::const_iterator state_end = rb->render_states->end();
+	render_indices_t *indexp;
+	render_state_t *statep;
 	
-	render_state_t state;
-	
-	if (GLEW_VERSION_1_4) {
-		while (index_iter != index_end && state_iter != state_end) {
-			GLint indices = index_iter->indices;
-			state = *state_iter;
+	if (GL_VERSION_1_4) {
+		while (state_idx <= state_top) {
+			indexp = rb->render_indices+state_idx;
+			GLint indices = indexp->indices;
 			
 			if (0 < indices) {
-				rs_bind(&state);
+				statep = rb->render_states+state_idx;
+				rs_bind(statep);
 				
-				uint32_t index_from = index_iter->index_from;
+				uint32_t index_from = indexp->index_from;
 				if (1 < indices) {
-					glMultiDrawArrays(state_iter->render_mode, indices_ptr+index_from, counts_ptr+index_from, indices);
+					glMultiDrawArrays(statep->render_mode, indices_ptr+index_from, counts_ptr+index_from, indices);
 				} else {
-					glDrawArrays(state_iter->render_mode, indices_ptr[index_from], counts_ptr[index_from]);
+					glDrawArrays(statep->render_mode, indices_ptr[index_from], counts_ptr[index_from]);
 				}
 			}
 			
-			++index_iter;
-			++state_iter;
+			++state_idx;
 		}
 	} else {
-		while (index_iter != index_end && state_iter != state_end) {
-			uint32_t indices = index_iter->indices;
+		while (state_idx <= state_top) {
+			indexp = rb->render_indices+state_idx;
+			uint32_t indices = indexp->indices;
 			if (0 < indices) {
-				rs_bind(&state);
+				statep = rb->render_states+state_idx;
+				rs_bind(statep);
 				
-				uint32_t index_from = index_iter->index_from;
+				uint32_t index_from = indexp->index_from;
 				for(; index_from < indices; ++index_from) {
-					glDrawArrays(state_iter->render_mode, indices_ptr[index_from], counts_ptr[index_from]);
+					glDrawArrays(statep->render_mode, indices_ptr[index_from], counts_ptr[index_from]);
 				}
 			}
 			
-			++index_iter;
-			++state_iter;
+			++state_idx;
 		}
 	}
 	
@@ -595,16 +601,14 @@ void rb_reset(render_buffer_t *rb) {
 		// TODO: error?
 		return;
 	}
-	
+	uint32_t last = rb->state_top;
 	rb->index = 0;
 	rb->sets = 0;
-	rb->render_indices->clear();
-	render_indices_t indices;
-	indices.index_from = indices.indices = indices.num_indices = 0;
-	rb->render_indices->push_back(indices);
-	render_state_t state = rb->render_states->back();
-	rb->render_states->clear();
-	rb->render_states->push_back(state);
+	rb->state_top = 0;
+	*rb->render_indices = (render_indices_t){0, 0, 0};
+	*rb->render_states = rb->render_states[last];
 }
 
+#ifdef __cplusplus
 }
+#endif

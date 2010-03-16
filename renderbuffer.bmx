@@ -41,7 +41,7 @@ Extern "C"
 	Function rs_set_texture(name%)
 	'renderbuffer
 	Function rb_init@Ptr(rb@Ptr)
-	Function rb_destroy@Ptr(rb@Ptr, free%)
+	Function rb_destroy@Ptr(rb@Ptr)
 	Function rb_set_texture(rb@Ptr, name%)
 	Function rb_set_mode(rb@Ptr, mode%)
 	Function rb_set_blend_func(rb@Ptr, source%, dest%)
@@ -109,13 +109,14 @@ Type TRenderBuffer Final
 	Field _lock%
 	Field _render_indices@Ptr
 	Field _render_states@Ptr
+	Field _state_capacity%, _states_top%
 	
 	Method New()
 		rb_init(Self)
 	End Method
 	
 	Method Delete()
-		rb_destroy(Self, False)
+		rb_destroy(Self)
 	End Method
 	
 	Method SetTexture(name:Int)
